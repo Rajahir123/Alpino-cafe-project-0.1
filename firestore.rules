@@ -28,7 +28,6 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.get('email', '') == 'denyteny123@gmail.com' ||
-        request.auth.token.get('email', '') == 'yuvraj.gurjar.ai@gmail.com' ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
@@ -65,20 +64,14 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin() || isKitchen();
-      allow list: if request.auth.token.get('email', '') == 'denyteny123@gmail.com' || request.auth.token.get('email', '') == 'yuvraj.gurjar.ai@gmail.com' || isAdmin();
+      allow list: if request.auth.token.get('email', '') == 'denyteny123@gmail.com' || isAdmin();
       allow create: if isOwner(userId) && isValidUser(incoming()) && (
         incoming().role == 'user' || 
-        (incoming().role == 'admin' && (request.auth.token.get('email', '') == 'denyteny123@gmail.com' || request.auth.token.get('email', '') == 'yuvraj.gurjar.ai@gmail.com'))
+        (incoming().role == 'admin' && request.auth.token.get('email', '') == 'denyteny123@gmail.com')
       );
       allow update: if (isOwner(userId) || isAdmin()) && (
         // Action: Update Profile (User) - Restricted to non-sensitive fields
-        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly([
-          'name', 'phone', 'address', 'gender', 'occupation', 'dob',
-          'primaryGoal', 'workoutFrequency', 'mealPreference', 'mealTypes',
-          'foodAllergies', 'consumptionMethod', 'preferredTimeSlot', 'upgradeMeals',
-          'mealAddons', 'socialMediaFeature', 'fitnessTips', 'heardAboutUs', 'startDate',
-          'proteinGoal', 'planId', 'planStatus', 'updatedAt', 'avgProtein', 'drafts', 'daysRemaining'
-        ])) ||
+        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'address', 'gender', 'occupation', 'primaryGoal', 'workoutFrequency', 'mealPreference', 'foodAllergies', 'consumptionMethod', 'preferredTimeSlot', 'upgradeMeals', 'socialMediaFeature', 'fitnessTips', 'heardAboutUs', 'startDate', 'proteinGoal', 'planId', 'planStatus', 'updatedAt', 'avgProtein', 'drafts'])) ||
         // Action: Admin adjustments - Admin can change anything
         (isAdmin())
       );
