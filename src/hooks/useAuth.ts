@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, Timestamp, Unsubscribe } from 'firebase/firestore';
 import { UserProfile } from '../types';
 
 export function useAuth() {
@@ -10,8 +10,17 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeDoc: Unsubscribe | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
+
+      // Clean up previous profile listener if any
+      if (unsubscribeDoc) {
+        unsubscribeDoc();
+        unsubscribeDoc = null;
+      }
+
       if (firebaseUser) {
         const userRef = doc(db, 'users', firebaseUser.uid);
         try {
@@ -70,16 +79,33 @@ export function useAuth() {
             }
             setProfile(data);
           }
+
+          // Real-time snapshot listener on the user profile document
+          unsubscribeDoc = onSnapshot(userRef, (docSnap) => {
+            if (docSnap.exists()) {
+              const liveData = docSnap.data() as UserProfile;
+              setProfile(liveData);
+            }
+            setLoading(false);
+          }, (err) => {
+            console.error('Error in profile onSnapshot:', err);
+            setLoading(false);
+          });
+
         } catch (error) {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
+          setLoading(false);
         }
       } else {
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribeDoc) unsubscribeDoc();
+      unsubscribeAuth();
+    };
   }, []);
 
   return { user, profile, loading };

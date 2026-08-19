@@ -204,12 +204,36 @@ export default function CustomerTable({ users, searchTerm }: CustomerTableProps)
                           {/* Logistics */}
                           <div className="space-y-4">
                             <h4 className="text-[10px] font-black uppercase text-red-600 tracking-[0.2em] mb-4 flex items-center gap-2">
-                              <Calendar size={14} /> Preferences
+                              <Calendar size={14} /> Logistics & Plan
                             </h4>
+                            {user.planId && (
+                              <div>
+                                <div className="text-[8px] font-black uppercase text-white/30 tracking-widest mb-1">Plan ID / Days</div>
+                                <div className="text-xs font-bold uppercase text-white/80">{user.planId} ({user.daysRemaining || 0} days remaining)</div>
+                              </div>
+                            )}
                             {user.preferredTimeSlot && (
                               <div>
                                 <div className="text-[8px] font-black uppercase text-white/30 tracking-widest mb-1">Time Slot</div>
                                 <div className="text-xs font-bold uppercase text-white/80">{user.preferredTimeSlot}</div>
+                              </div>
+                            )}
+                            {user.dob && (
+                              <div>
+                                <div className="text-[8px] font-black uppercase text-white/30 tracking-widest mb-1">Date of Birth</div>
+                                <div className="text-xs font-bold uppercase text-white/80">{user.dob}</div>
+                              </div>
+                            )}
+                            {user.mealAddons && (
+                              <div>
+                                <div className="text-[8px] font-black uppercase text-white/30 tracking-widest mb-1">Meal Add-ons</div>
+                                <div className="text-xs font-bold uppercase text-white/80">{user.mealAddons}</div>
+                              </div>
+                            )}
+                            {user.heardAboutUs && (
+                              <div>
+                                <div className="text-[8px] font-black uppercase text-white/30 tracking-widest mb-1">Referral Source</div>
+                                <div className="text-xs font-bold uppercase text-white/80">{user.heardAboutUs}</div>
                               </div>
                             )}
                             

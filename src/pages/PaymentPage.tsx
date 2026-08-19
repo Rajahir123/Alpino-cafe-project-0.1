@@ -1,20 +1,45 @@
 import { useAuth } from '../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { QrCode, AlertCircle, Clock, Upload, CheckCircle2, ChevronRight, Zap } from 'lucide-react';
+import { QrCode, AlertCircle, Clock, Upload, CheckCircle2, ChevronRight, Zap, CheckCircle, ArrowRight } from 'lucide-react';
 import { PLANS } from '../constants';
 import { useEffect, useState } from 'react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, getDoc, updateDoc, Timestamp, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, Timestamp, collection, query, where, onSnapshot, setDoc } from 'firebase/firestore';
 
 export default function PaymentPage() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [barcodeUrl, setBarcodeUrl] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [screenshotUrl, setScreenshotUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
   const [rejectionMessage, setRejectionMessage] = useState('');
-  const selectedPlan = PLANS.find(p => p.id === profile?.planId);
+  const [countdown, setCountdown] = useState(3);
+  const selectedPlan = PLANS.find(p => p.id === profile?.planId) || PLANS[0];
+
+  // Auto-redirect if profile plan is already active
+  useEffect(() => {
+    if (profile?.planStatus === 'active') {
+      setIsApproved(true);
+      const timer = setTimeout(() => {
+        navigate('/dashboard');
+      }, 1800);
+      return () => clearTimeout(timer);
+    }
+  }, [profile?.planStatus, navigate]);
+
+  // Countdown timer when approved
+  useEffect(() => {
+    if (isApproved && countdown > 0) {
+      const interval = setInterval(() => {
+        setCountdown((prev) => prev - 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [isApproved, countdown]);
 
   useEffect(() => {
     const fetchBarcode = async () => {
@@ -29,27 +54,45 @@ export default function PaymentPage() {
     };
     fetchBarcode();
 
-    // Check if a payment record already exists
-    const checkPayment = async () => {
-      if (!profile) return;
-      const q = query(collection(db, 'payments'), where('userId', '==', profile.uid), where('status', 'in', ['pending', 'submitted', 'rejected']));
-      const snap = await getDocs(q);
+    // Listen in real-time to user's payment records
+    if (!profile?.uid) return;
+    
+    const q = query(
+      collection(db, 'payments'), 
+      where('userId', '==', profile.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
       if (!snap.empty) {
         // Sort by newest
-        const docs = snap.docs.sort((a,b) => b.data().createdAt.seconds - a.data().createdAt.seconds);
-        const data = docs[0].data();
-        if (data.status === 'submitted') {
+        const docs = snap.docs.map(d => d.data()).sort((a, b) => {
+          const aTime = a.createdAt?.seconds || 0;
+          const bTime = b.createdAt?.seconds || 0;
+          return bTime - aTime;
+        });
+        const latestPayment = docs[0];
+        
+        if (latestPayment.status === 'approved' || profile?.planStatus === 'active') {
+          setIsApproved(true);
+          setSubmitted(false);
+        } else if (latestPayment.status === 'submitted') {
           setSubmitted(true);
-        } else if (data.status === 'rejected') {
+          setIsApproved(false);
+        } else if (latestPayment.status === 'rejected') {
           setSubmitted(false);
-          setRejectionMessage(data.statusMessage || 'Payment rejected. Please verify your details and try again.');
-        } else if (data.status === 'pending') {
+          setIsApproved(false);
+          setRejectionMessage(latestPayment.statusMessage || 'Payment rejected. Please verify your details and try again.');
+        } else if (latestPayment.status === 'pending') {
           setSubmitted(false);
+          setIsApproved(false);
         }
       }
-    };
-    checkPayment();
-  }, [profile]);
+    }, (error) => {
+      console.error("Error listening to payments:", error);
+    });
+
+    return () => unsubscribe();
+  }, [profile?.uid, profile?.planStatus]);
 
   const handleSubmitPayment = async () => {
     if (!profile || !screenshotUrl) return;
@@ -63,12 +106,14 @@ export default function PaymentPage() {
       await setDoc(paymentRef, {
         id: paymentId,
         userId: profile.uid,
-        userName: profile.name,
-        userEmail: profile.email,
-        planId: profile.planId,
-        planName: selectedPlan?.name || 'Unknown Plan',
+        userName: profile.name || 'User',
+        userEmail: profile.email || '',
+        userPhone: profile.phone || '',
+        userAddress: profile.address || '',
+        planId: profile.planId || selectedPlan?.id || 'muscle_gain_pro',
+        planName: selectedPlan?.name || 'Meal Subscription Plan',
         amount: selectedPlan?.price || 0,
-        transactionId: transactionId,
+        transactionId: transactionId.trim(),
         screenshotUrl: screenshotUrl || 'https://via.placeholder.com/400?text=Screenshot+Pending',
         status: 'submitted',
         createdAt: Timestamp.now(),
@@ -111,7 +156,55 @@ export default function PaymentPage() {
         </div>
 
         <AnimatePresence mode="wait">
-          {!submitted ? (
+          {isApproved ? (
+            <motion.div 
+              key="verification-approved"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="py-6 md:py-10 space-y-6 text-center"
+            >
+              <div className="w-20 h-20 bg-green-500/10 border-2 border-green-500/30 rounded-3xl flex items-center justify-center mx-auto relative shadow-lg shadow-green-500/10">
+                <CheckCircle className="w-10 h-10 text-green-600 animate-bounce" />
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[9px] font-black uppercase tracking-[0.25em] text-green-600 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20">
+                  Payment Verified
+                </span>
+                <h2 className="text-xl md:text-2xl font-black italic uppercase text-neutral-900">
+                  Subscription Active
+                </h2>
+                <p className="text-xs text-neutral-600 font-medium px-4 leading-relaxed">
+                  Your payment has been verified and approved by the admin team. All profile and plan records are synchronized with Firebase.
+                </p>
+              </div>
+
+              <div className="p-4 bg-white rounded-2xl border border-neutral-200 text-left space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-500 font-semibold">User:</span>
+                  <span className="font-bold text-neutral-900">{profile?.name || profile?.email}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-500 font-semibold">Plan:</span>
+                  <span className="font-bold text-neutral-900">{selectedPlan?.name}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-500 font-semibold">Redirecting in:</span>
+                  <span className="font-black text-red-600">{countdown} seconds</span>
+                </div>
+              </div>
+
+              <button
+                id="enter-dashboard-btn"
+                onClick={() => navigate('/dashboard')}
+                className="w-full py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black italic uppercase tracking-widest text-sm shadow-xl shadow-red-600/25 flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.02]"
+              >
+                <span>Enter User Panel Now</span>
+                <ArrowRight size={16} />
+              </button>
+            </motion.div>
+          ) : !submitted ? (
             <motion.div 
               key="payment-form"
               initial={{ opacity: 0, x: -10 }}
@@ -123,8 +216,8 @@ export default function PaymentPage() {
                 <div className="bg-red-600/10 border border-red-600/20 p-3 md:p-4 rounded-xl md:rounded-2xl flex items-start gap-2.5 text-left">
                   <AlertCircle className="text-red-600 shrink-0 mt-0.5 md:w-4 md:h-4" size={14} />
                   <div>
-                    <div className="text-[9px] md:text-[10px] font-black uppercase text-red-600 mb-0.5 tracking-widest">Protocol Rejection</div>
-                    <p className="text-[9px] md:text-[10px] text-red-100/60 font-medium leading-relaxed">{rejectionMessage}</p>
+                    <div className="text-[9px] md:text-[10px] font-black uppercase text-red-600 mb-0.5 tracking-widest">Payment Needs Attention</div>
+                    <p className="text-[9px] md:text-[10px] text-red-700 font-medium leading-relaxed">{rejectionMessage}</p>
                   </div>
                 </div>
               )}
@@ -150,7 +243,7 @@ export default function PaymentPage() {
                     type="text" 
                     value={transactionId}
                     onChange={(e) => setTransactionId(e.target.value)}
-                    placeholder="Enter 12-digit number"
+                    placeholder="Enter 12-digit UPI reference"
                     className="w-full bg-white border border-neutral-200 rounded-xl md:rounded-2xl p-3 md:p-4 text-neutral-900 font-bold text-xs md:text-sm focus:border-red-600 outline-none transition-all placeholder:text-neutral-500"
                   />
                 </div>
@@ -164,7 +257,8 @@ export default function PaymentPage() {
                      <input 
                        type="file" 
                        accept=".jpeg, .jpg, .png" 
-                       className="hidden"                        onChange={async (e) => {
+                       className="hidden"
+                       onChange={async (e) => {
                          const file = e.target.files?.[0];
                          if (!file || !profile) return;
                          
@@ -202,7 +296,7 @@ export default function PaymentPage() {
                            setScreenshotUrl(data.url);
                          } catch (error: any) {
                            console.error('Upload failed:', error);
-                           // Fallback 2: Compress and store as base64 data URL
+                           // Fallback: Compress and store as base64 data URL
                            try {
                              const compressedDataUrl = await new Promise<string>((resolve, reject) => {
                                const reader = new FileReader();
@@ -244,7 +338,6 @@ export default function PaymentPage() {
                              });
                              
                              setScreenshotUrl(compressedDataUrl);
-                             // Silently succeed
                            } catch (compressError: any) {
                              console.error('Compression failed:', compressError);
                              alert(`Upload completely failed. Storage error: ${error.message}. Local error: ${compressError.message}`);
@@ -280,7 +373,7 @@ export default function PaymentPage() {
               </button>
 
               <p className="text-[8px] md:text-[9px] text-neutral-500 font-black uppercase leading-relaxed tracking-widest">
-                Our logistics AI will verify the transaction within 30-60 minutes. Access will unlock automatically.
+                Our admin verification team will review your submission shortly. Access will unlock automatically.
               </p>
             </motion.div>
           ) : (
@@ -298,9 +391,9 @@ export default function PaymentPage() {
               </div>
 
               <div>
-                <h2 className="text-lg md:text-xl font-black italic uppercase mb-1 md:mb-2">Extraction Pending</h2>
+                <h2 className="text-lg md:text-xl font-black italic uppercase mb-1 md:mb-2">Payment Under Verification</h2>
                 <p className="text-[9px] md:text-[10px] text-neutral-500 font-black uppercase tracking-widest leading-relaxed px-4">
-                  Your payment record has been submitted to Alpino Governance. Verification is currently active.
+                  Your payment receipt has been submitted to Alpino Administration. As soon as admin verifies, you will be automatically redirected to your user panel.
                 </p>
               </div>
 
@@ -308,12 +401,12 @@ export default function PaymentPage() {
                  <div className="flex justify-between items-center text-[10px] font-black uppercase">
                    <span className="text-neutral-500">Target Status</span>
                    <span className="text-red-600 flex items-center gap-2">
-                     <Zap size={10} className="animate-bounce" /> ANALYZING
+                     <Zap size={10} className="animate-bounce" /> AWAITING APPROVAL
                    </span>
                  </div>
                  <div className="flex justify-between items-center text-[10px] font-black uppercase">
-                   <span className="text-neutral-500">Access Token</span>
-                   <span className="text-neutral-500">GATED</span>
+                   <span className="text-neutral-500">Storage</span>
+                   <span className="text-green-600 font-bold">SAVED TO FIREBASE</span>
                  </div>
               </div>
 
@@ -321,7 +414,7 @@ export default function PaymentPage() {
                 onClick={() => window.location.reload()}
                 className="w-full py-3 text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em] md:tracking-[0.4em] text-neutral-500 hover:text-neutral-900 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <Clock size={10} /> Force State Sync
+                <Clock size={10} /> Check Status Now
               </button>
             </motion.div>
           )}

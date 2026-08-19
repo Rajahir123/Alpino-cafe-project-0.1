@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, query, getDocs, doc, updateDoc, Timestamp, where, writeBatch, addDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, Timestamp, where, writeBatch, addDoc, deleteDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { PaymentRecord, UserProfile, MenuItem } from '../types';
 import { PLANS } from '../constants';
 import { motion } from 'motion/react';
@@ -58,10 +58,7 @@ export default function AdminDashboard() {
   const [newNote, setNewNote] = usePersistedState('admin_new_note', '');
 
   const fetchData = async () => {
-    setLoading(true);
     try {
-      const paySnap = await getDocs(collection(db, 'payments'));
-      const userSnap = await getDocs(collection(db, 'users'));
       const menuSnap = await getDocs(collection(db, 'menu'));
       const notesSnap = await getDocs(query(collection(db, 'notes')));
       const settingsSnap = await getDocs(collection(db, 'settings'));
@@ -71,26 +68,44 @@ export default function AdminDashboard() {
         setPaymentBarcode(barcodeDoc.data().url || '');
       }
       
-      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as PaymentRecord)));
-      setUsers(userSnap.docs.map(d => ({ ...d.data() } as UserProfile)));
       setMenuItems(menuSnap.docs.map(d => ({ id: d.id, ...d.data() } as MenuItem)));
       setNotes(notesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)).sort((a,b) => b.createdAt?.seconds - a.createdAt?.seconds));
     } catch (error: any) {
       console.error("Data fetch failed:", error);
-      // We don't throw here to avoid crashing the UI
-    } finally {
-      setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
+
+    // Real-time listener for Payments
+    const unsubPayments = onSnapshot(collection(db, 'payments'), (snap) => {
+      const fetchedPayments = snap.docs.map(d => ({ id: d.id, ...d.data() } as PaymentRecord));
+      setPayments(fetchedPayments);
+      setLoading(false);
+    }, (err) => {
+      console.error("Error listening to payments:", err);
+      setLoading(false);
+    });
+
+    // Real-time listener for Users
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+      const fetchedUsers = snap.docs.map(d => ({ ...d.data() } as UserProfile));
+      setUsers(fetchedUsers);
+    }, (err) => {
+      console.error("Error listening to users:", err);
+    });
+
+    return () => {
+      unsubPayments();
+      unsubUsers();
+    };
   }, []);
 
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
   const handleApprove = async (payment: PaymentRecord) => {
-    const plan = PLANS.find(p => p.id === payment.planId);
+    const plan = PLANS.find(p => p.id === payment.planId) || PLANS[0];
     if (!plan) return;
 
     setApprovingId(payment.id);
@@ -101,8 +116,9 @@ export default function AdminDashboard() {
       const payRef = doc(db, 'payments', payment.id);
       batch.update(payRef, { 
         status: 'approved',
-        verifiedBy: user?.email,
-        verifiedAt: Timestamp.now()
+        verifiedBy: user?.email || 'admin',
+        verifiedAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
       });
 
       // 2. Update User
@@ -110,16 +126,17 @@ export default function AdminDashboard() {
       batch.update(userRef, {
         planId: payment.planId,
         planStatus: 'active',
-        daysRemaining: plan.duration,
+        daysRemaining: plan.duration || 30,
         updatedAt: Timestamp.now()
       });
 
       await batch.commit();
+
+      // Immediately reflect in local state
+      setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, status: 'approved', verifiedBy: user?.email || 'admin' } : p));
+      setUsers(prev => prev.map(u => u.uid === payment.userId ? { ...u, planStatus: 'active', planId: payment.planId, daysRemaining: plan.duration || 30 } : u));
       
-      // Simulate Email Protocol
-      console.log(`[EMAIL SYSTEM]: Sending approval confirmation to ${payment.userEmail}...`);
-      
-      await fetchData();
+      console.log(`[APPROVAL SUCCESS]: Verified payment for user ${payment.userName || payment.userEmail}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `approve payment/${payment.id}`);
     } finally {
@@ -135,10 +152,11 @@ export default function AdminDashboard() {
       await updateDoc(doc(db, 'payments', paymentId), { 
         status: 'rejected',
         statusMessage: reason,
-        verifiedBy: user?.email,
-        verifiedAt: Timestamp.now()
+        verifiedBy: user?.email || 'admin',
+        verifiedAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
       });
-      fetchData();
+      setPayments(prev => prev.map(p => p.id === paymentId ? { ...p, status: 'rejected', statusMessage: reason } : p));
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `payments/${paymentId}`);
     }
