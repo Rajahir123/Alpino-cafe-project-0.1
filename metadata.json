@@ -2,5 +2,5 @@
   "name": "Alpino Protein Café",
   "description": "Onboarding, user, admin, and kitchen panel for Alpino Protein Café with plan management, menu selection, and protein tracking.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

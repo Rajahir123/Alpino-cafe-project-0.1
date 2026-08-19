@@ -5,9 +5,10 @@ import { PaymentRecord, UserProfile, MenuItem } from '../types';
 import { PLANS } from '../constants';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
-import { Check, X, ShieldCheck, ShieldAlert, Users, CreditCard, LayoutDashboard, Search, Image as ImageIcon, Utensils, Plus, Trash2, Save, History, FileText, Zap, ExternalLink, Lock, LogIn } from 'lucide-react';
+import { Check, X, ShieldCheck, ShieldAlert, Users, CreditCard, LayoutDashboard, Search, Image as ImageIcon, Utensils, Plus, Trash2, Save, History, FileText, Zap, ExternalLink, Lock, LogIn, UserPlus } from 'lucide-react';
 import ImageManagement from '../components/ImageManagement';
 import CustomerTable from '../components/CustomerTable';
+import AddUserModal from '../components/AddUserModal';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useAuth } from '../hooks/useAuth';
 import { signInWithPopup } from 'firebase/auth';
@@ -16,6 +17,7 @@ import { auth as firebaseAuth, googleProvider } from '../lib/firebase';
 export default function AdminDashboard() {
   const { profile, user } = useAuth();
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
 
   const handleSystemLock = () => {
     localStorage.removeItem('alpino_admin_authorized');
@@ -832,25 +834,55 @@ export default function AdminDashboard() {
             </section>
           </main>
         ) : activeTab === 'users' ? (
-          <main className="space-y-12">
-            <div className="flex items-center justify-between">
-              <h2 className="text-3xl font-black italic uppercase flex items-center gap-3">
-                <Users className="text-red-600" /> Customer <span className="text-red-600">Database</span>
-              </h2>
-              <span className="text-[10px] font-black uppercase text-neutral-500 tracking-widest">{filteredUsers.length} REGISTERED</span>
-            </div>
-            {filteredUsers.length === 0 ? (
-              <div className="bg-neutral-50 border border-neutral-200 p-12 rounded-[3rem] text-center">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500">No users found.</p>
+          <main className="space-y-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-3xl font-black italic uppercase flex items-center gap-3">
+                  <Users className="text-red-600" /> Customer <span className="text-red-600">Database</span>
+                </h2>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-500 mt-1">
+                  Comprehensive customer profiles, active subscriptions, payment records & control
+                </p>
               </div>
-            ) : (
-              <CustomerTable users={users} searchTerm={searchTerm} />
-            )}
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-black uppercase text-neutral-500 tracking-widest bg-neutral-100 px-3 py-2 rounded-xl border border-neutral-200">
+                  {users.length} REGISTERED
+                </span>
+                <button
+                  id="admin-add-user-btn"
+                  onClick={() => setIsAddUserModalOpen(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-red-600/20 transition-all cursor-pointer"
+                >
+                  <UserPlus size={15} /> Add New User
+                </button>
+              </div>
+            </div>
+
+            <CustomerTable 
+              users={users} 
+              payments={payments}
+              searchTerm={searchTerm} 
+              onUserDeleted={(uid) => {
+                setUsers(prev => prev.filter(u => u.uid !== uid));
+              }}
+              onUserUpdated={(updatedUser) => {
+                setUsers(prev => prev.map(u => u.uid === updatedUser.uid ? updatedUser : u));
+              }}
+            />
           </main>
         ) : (
           <ImageManagement />
         )}
       </div>
+
+      {/* Add User Modal */}
+      <AddUserModal 
+        isOpen={isAddUserModalOpen}
+        onClose={() => setIsAddUserModalOpen(false)}
+        onUserAdded={(newUser) => {
+          setUsers(prev => [newUser, ...prev.filter(u => u.uid !== newUser.uid)]);
+        }}
+      />
 
       {/* Screenshot Modal */}
       {viewingScreenshot && (

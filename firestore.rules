@@ -65,16 +65,17 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin() || isKitchen();
       allow list: if request.auth.token.get('email', '') in ['denyteny123@gmail.com', 'yuvraj.gurjar.ai@gmail.com'] || isAdmin();
-      allow create: if isOwner(userId) && isValidUser(incoming()) && (
+      allow create: if (isOwner(userId) && isValidUser(incoming()) && (
         incoming().role == 'user' || 
         (incoming().role == 'admin' && request.auth.token.get('email', '') in ['denyteny123@gmail.com', 'yuvraj.gurjar.ai@gmail.com'])
-      );
+      )) || (isAdmin() && isValidUser(incoming()));
       allow update: if (isOwner(userId) || isAdmin()) && (
         // Action: Update Profile (User) - Restricted to non-sensitive fields
-        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'address', 'gender', 'occupation', 'primaryGoal', 'workoutFrequency', 'mealPreference', 'mealTypes', 'foodAllergies', 'consumptionMethod', 'preferredTimeSlot', 'upgradeMeals', 'socialMediaFeature', 'fitnessTips', 'heardAboutUs', 'startDate', 'dob', 'mealAddons', 'proteinGoal', 'planId', 'planStatus', 'updatedAt', 'avgProtein', 'drafts'])) ||
+        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'address', 'gender', 'occupation', 'primaryGoal', 'workoutFrequency', 'mealPreference', 'mealTypes', 'foodAllergies', 'consumptionMethod', 'preferredTimeSlot', 'upgradeMeals', 'socialMediaFeature', 'fitnessTips', 'heardAboutUs', 'startDate', 'dob', 'mealAddons', 'proteinGoal', 'planId', 'planStatus', 'updatedAt', 'avgProtein', 'drafts', 'daysRemaining'])) ||
         // Action: Admin adjustments - Admin can change anything
         (isAdmin())
       );
+      allow delete: if isAdmin();
     }
 
     // --- Menu Validation ---
@@ -120,19 +121,21 @@ service cloud.firestore {
         (isKitchen() && incoming().diff(existing()).affectedKeys().hasOnly(['status'])) ||
         isAdmin()
       );
+      allow delete: if isAdmin();
     }
 
     // --- Payments ---
     function isValidPayment(data) {
-      return data.userId == request.auth.uid &&
-             (data.status == 'pending' || data.status == 'submitted');
+      return (data.userId == request.auth.uid || isAdmin()) &&
+             (data.status in ['pending', 'submitted', 'approved']);
     }
 
     match /payments/{paymentId} {
       allow get: if isOwner(resource.data.userId) || isAdmin();
       allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow create: if isSignedIn() && isValidPayment(incoming());
+      allow create: if (isSignedIn() && isValidPayment(incoming())) || isAdmin();
       allow update: if (isAdmin() || request.auth.token.get('email', '') in ['denyteny123@gmail.com', 'yuvraj.gurjar.ai@gmail.com']) && incoming().status in ['approved', 'rejected'];
+      allow delete: if isAdmin();
     }
 
     // --- Assets ---
@@ -149,12 +152,14 @@ service cloud.firestore {
 
     // --- Drafts ---
     match /users/{userId}/drafts/{panelId} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isOwner(userId) || isAdmin();
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     // --- Notes (Admin Records) ---
     match /notes/{noteId} {
       allow read, write: if isAdmin();
+      allow delete: if isAdmin();
     }
   }
 }
