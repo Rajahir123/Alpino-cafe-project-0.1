@@ -1,0 +1,89 @@
+export type UserRole = 'user' | 'admin' | 'kitchen';
+export type PlanStatus = 'none' | 'pending' | 'active' | 'expired' | 'rejected';
+export type OrderStatus = 'pending' | 'preparing' | 'out-for-delivery' | 'delivered';
+export type PaymentStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
+
+export interface UserProfile {
+  uid: string;
+  name: string;
+  email: string;
+  phone?: string;
+  address?: string;
+  gender?: string;
+  occupation?: string;
+  primaryGoal?: string;
+  workoutFrequency?: string;
+  mealPreference?: string;
+  mealTypes?: string;
+  foodAllergies?: string;
+  consumptionMethod?: string;
+  preferredTimeSlot?: string;
+  upgradeMeals?: string;
+  socialMediaFeature?: string;
+  fitnessTips?: string;
+  heardAboutUs?: string;
+  dob?: string;
+  mealAddons?: string[];
+  startDate?: string;
+  role: UserRole;
+  planId?: string;
+  planStatus: PlanStatus;
+  daysRemaining: number;
+  proteinGoal: number;
+  avgProtein: number;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface MenuItem {
+  id: string;
+  name: string;
+  category: 'Bowl' | 'Smoothie' | 'Shake' | 'Wrap' | 'Sub' | 'Oats';
+  protein: number;
+  calories: number;
+  price: number;
+  isTrialFixed: boolean;
+  image?: string;
+  bgImage?: string;
+  spinningImage?: string;
+  description?: string;
+  published?: boolean;
+}
+
+export interface Plan {
+  id: string;
+  name: string;
+  type: 'trial' | 'pro';
+  price: number;
+  duration: number;
+  description: string;
+  includes: string[];
+}
+
+export interface Order {
+  id: string;
+  userId: string;
+  userName: string;
+  date: string; // YYYY-MM-DD
+  items: MenuItem[];
+  status: OrderStatus;
+  createdAt: any;
+}
+
+export interface PaymentRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  planId: string;
+  planName: string;
+  amount: number;
+  status: PaymentStatus;
+  transactionId?: string;
+  screenshotUrl?: string;
+  statusMessage?: string;
+  verifiedBy?: string;
+  verifiedAt?: any;
+  createdAt: any;
+  updatedAt?: any;
+}

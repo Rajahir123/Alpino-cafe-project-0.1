@@ -1,0 +1,61 @@
+import { useState, useEffect } from 'react';
+import { db } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+
+interface AssetImageProps {
+  assetName: string;
+  fallbackUrl: string;
+  alt: string;
+  className?: string;
+}
+
+export default function AssetImage({ assetName, fallbackUrl, alt, className = "" }: AssetImageProps) {
+  const [url, setUrl] = useState<string>(fallbackUrl);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!assetName) {
+      setLoading(false);
+      return;
+    }
+    
+    const assetId = assetName.replace(/\s+/g, '_').toLowerCase();
+    const unsubscribe = onSnapshot(doc(db, 'assets', assetId), (docSnap) => {
+      if (docSnap.exists()) {
+        setUrl(docSnap.data().url);
+      } else {
+        setUrl(fallbackUrl);
+      }
+      setLoading(false);
+    }, (error) => {
+      console.error("Asset resolution failed:", error);
+      setUrl(fallbackUrl);
+      setLoading(false);
+    });
+    
+    return () => unsubscribe();
+  }, [assetName, fallbackUrl]);
+
+  return (
+    <div className={`relative overflow-hidden ${className}`}>
+      {loading && (
+        <div className="absolute inset-0 bg-neutral-800 animate-pulse flex items-center justify-center">
+           <div className="w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
+        </div>
+      )}
+      <img 
+        src={url || undefined} 
+        alt={alt} 
+        onLoad={() => setLoading(false)}
+        onError={(e) => {
+          if (url !== fallbackUrl) {
+            setUrl(fallbackUrl);
+          }
+          setLoading(false);
+        }}
+        className={`w-full h-full object-cover transition-opacity duration-700 ${loading ? 'opacity-0' : 'opacity-100'}`}
+        referrerPolicy="no-referrer"
+      />
+    </div>
+  );
+}

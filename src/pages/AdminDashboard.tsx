@@ -1,0 +1,858 @@
+import { useState, useEffect } from 'react';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, query, getDocs, doc, updateDoc, Timestamp, where, writeBatch, addDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { PaymentRecord, UserProfile, MenuItem } from '../types';
+import { PLANS } from '../constants';
+import { motion } from 'motion/react';
+import { Link } from 'react-router-dom';
+import { Check, X, ShieldCheck, ShieldAlert, Users, CreditCard, LayoutDashboard, Search, Image as ImageIcon, Utensils, Plus, Trash2, Save, History, FileText, Zap, ExternalLink, Lock, LogIn } from 'lucide-react';
+import ImageManagement from '../components/ImageManagement';
+import CustomerTable from '../components/CustomerTable';
+import { usePersistedState } from '../hooks/usePersistedState';
+import { useAuth } from '../hooks/useAuth';
+import { signInWithPopup } from 'firebase/auth';
+import { auth as firebaseAuth, googleProvider } from '../lib/firebase';
+
+export default function AdminDashboard() {
+  const { profile, user } = useAuth();
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
+
+  const handleSystemLock = () => {
+    localStorage.removeItem('alpino_admin_authorized');
+    window.location.reload();
+  };
+
+  const handleAdminLogin = async () => {
+    try {
+      await signInWithPopup(firebaseAuth, googleProvider);
+    } catch (error) {
+      console.error("Login failed:", error);
+    }
+  };
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [notes, setNotes] = useState<{id: string, text: string, createdAt: any}[]>([]);
+  const [paymentBarcode, setPaymentBarcode] = useState('');
+  const [loading, setLoading] = useState(true);
+  
+  // Persisted variables
+  const [searchTerm, setSearchTerm] = usePersistedState('admin_search', '');
+  const [activeTab, setActiveTab] = usePersistedState<'payments' | 'images' | 'menu' | 'notes' | 'users'>('admin_tab', 'payments');
+  const [viewingScreenshot, setViewingScreenshot] = useState<string | null>(null);
+  
+  const [selectedMenuItemIds, setSelectedMenuItemIds] = useState<Set<string>>(new Set());
+  const [isMenuSelectMode, setIsMenuSelectMode] = useState(false);
+  
+  // Menu Item Form State
+  const [newItem, setNewItem] = usePersistedState<Partial<MenuItem>>('admin_new_item', { 
+    category: 'Bowl', 
+    protein: 0, 
+    calories: 0, 
+    price: 0, 
+    isTrialFixed: false,
+    description: '',
+    bgImage: '',
+    spinningImage: '',
+    published: true
+  });
+  const [newNote, setNewNote] = usePersistedState('admin_new_note', '');
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const paySnap = await getDocs(collection(db, 'payments'));
+      const userSnap = await getDocs(collection(db, 'users'));
+      const menuSnap = await getDocs(collection(db, 'menu'));
+      const notesSnap = await getDocs(query(collection(db, 'notes')));
+      const settingsSnap = await getDocs(collection(db, 'settings'));
+      
+      const barcodeDoc = settingsSnap.docs.find(d => d.id === 'payment_barcode');
+      if (barcodeDoc) {
+        setPaymentBarcode(barcodeDoc.data().url || '');
+      }
+      
+      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as PaymentRecord)));
+      setUsers(userSnap.docs.map(d => ({ ...d.data() } as UserProfile)));
+      setMenuItems(menuSnap.docs.map(d => ({ id: d.id, ...d.data() } as MenuItem)));
+      setNotes(notesSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)).sort((a,b) => b.createdAt?.seconds - a.createdAt?.seconds));
+    } catch (error: any) {
+      console.error("Data fetch failed:", error);
+      // We don't throw here to avoid crashing the UI
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+
+  const handleApprove = async (payment: PaymentRecord) => {
+    const plan = PLANS.find(p => p.id === payment.planId);
+    if (!plan) return;
+
+    setApprovingId(payment.id);
+    const batch = writeBatch(db);
+
+    try {
+      // 1. Update Payment
+      const payRef = doc(db, 'payments', payment.id);
+      batch.update(payRef, { 
+        status: 'approved',
+        verifiedBy: user?.email,
+        verifiedAt: Timestamp.now()
+      });
+
+      // 2. Update User
+      const userRef = doc(db, 'users', payment.userId);
+      batch.update(userRef, {
+        planId: payment.planId,
+        planStatus: 'active',
+        daysRemaining: plan.duration,
+        updatedAt: Timestamp.now()
+      });
+
+      await batch.commit();
+      
+      // Simulate Email Protocol
+      console.log(`[EMAIL SYSTEM]: Sending approval confirmation to ${payment.userEmail}...`);
+      
+      await fetchData();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `approve payment/${payment.id}`);
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  const handleReject = async (paymentId: string) => {
+    const reason = prompt("Enter rejection reason (User will see this):");
+    if (!reason) return;
+
+    try {
+      await updateDoc(doc(db, 'payments', paymentId), { 
+        status: 'rejected',
+        statusMessage: reason,
+        verifiedBy: user?.email,
+        verifiedAt: Timestamp.now()
+      });
+      fetchData();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `payments/${paymentId}`);
+    }
+  };
+
+  const handleAddMenuItem = async () => {
+    if (!newItem.name || !newItem.category) return;
+    try {
+      const id = newItem.name.replace(/\s+/g, '-').toLowerCase();
+      await setDoc(doc(db, 'menu', id), {
+        ...newItem,
+        bgImage: newItem.bgImage || '',
+        spinningImage: newItem.spinningImage || '',
+        published: newItem.published !== undefined ? newItem.published : true,
+        id,
+        updatedAt: Timestamp.now()
+      });
+      setNewItem({ 
+        category: 'Bowl', 
+        protein: 0, 
+        calories: 0, 
+        price: 0, 
+        isTrialFixed: false,
+        description: '',
+        bgImage: '',
+        spinningImage: '',
+        published: true
+      });
+      fetchData();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'menu adding');
+    }
+  };
+
+  const handleDeleteMenuItem = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'menu', id));
+      fetchData();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `menu/${id}`);
+    }
+  };
+
+  const toggleMenuItemSelection = (id: string) => {
+    const newSelected = new Set(selectedMenuItemIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedMenuItemIds(newSelected);
+  };
+
+  const handleBulkDeleteMenuItems = async () => {
+    if (selectedMenuItemIds.size === 0) return;
+    const batch = writeBatch(db);
+    selectedMenuItemIds.forEach(id => {
+      batch.delete(doc(db, 'menu', id));
+    });
+    
+    try {
+      setLoading(true);
+      await batch.commit();
+      setSelectedMenuItemIds(new Set());
+      setIsMenuSelectMode(false);
+      fetchData();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'bulk menu items');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTogglePublish = async (item: MenuItem) => {
+    try {
+      await updateDoc(doc(db, 'menu', item.id), {
+        published: !item.published,
+        updatedAt: Timestamp.now()
+      });
+      fetchData();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `menu/${item.id}`);
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!newNote) return;
+    try {
+      await addDoc(collection(db, 'notes'), {
+        text: newNote,
+        createdAt: Timestamp.now()
+      });
+      setNewNote('');
+      fetchData();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'notes');
+    }
+  };
+
+  const updateBarcode = async (url: string) => {
+    try {
+      await setDoc(doc(db, 'settings', 'payment_barcode'), {
+        url,
+        updatedAt: Timestamp.now()
+      });
+      setPaymentBarcode(url);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings/payment_barcode');
+    }
+  };
+
+  const pendingPayments = payments.filter(p => p.status === 'submitted');
+  const filteredUsers = users
+    .filter(u => u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || u.email?.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  if (loading) return <div className="p-20 text-center font-black animate-pulse text-red-600 italic uppercase">Syncing CAFE COMMAND...</div>;
+
+  return (
+    <div className="min-h-screen bg-white text-neutral-900 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-8 md:space-y-12">
+        <header className="border-b border-neutral-200 pb-8 space-y-6">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-2 text-red-600 mb-2">
+                <ShieldCheck size={16} md:size={20} />
+                <span className="text-[10px] md:text-xs font-black uppercase tracking-[0.3em]">System Admin</span>
+              </div>
+              <h1 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter">Command <span className="text-red-600">Center</span></h1>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-3">
+              {!user && (
+                <button 
+                  onClick={handleAdminLogin}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest text-white shadow-lg"
+                >
+                  <LogIn size={14} /> Full Access Login
+                </button>
+              )}
+              <button 
+                onClick={handleSystemLock}
+                className="flex items-center gap-2 px-5 py-2.5 bg-neutral-100 hover:bg-red-600/20 hover:text-red-500 rounded-xl border border-neutral-200 transition-all text-[10px] font-black uppercase tracking-widest text-neutral-500"
+                title="Lock Admin Panel"
+              >
+                <Lock size={14} /> Lock System
+              </button>
+              {(profile?.role !== 'admin') && (
+                <div className="bg-red-600/10 border border-red-600/20 p-3 rounded-xl flex items-center gap-2.5 animate-pulse max-w-sm">
+                  <ShieldAlert className="text-red-600 flex-shrink-0" size={16} />
+                  <div className="text-[8px] font-bold uppercase tracking-wider text-red-100">
+                    Write Restricted — Login Required for changes.
+                  </div>
+                </div>
+              )}
+              <Link to="/kitchen" className="flex items-center gap-2 px-5 py-2.5 bg-red-600/10 hover:bg-red-600/20 text-red-600 rounded-xl border border-red-600/20 transition-all text-[10px] font-black uppercase tracking-widest">
+                <Utensils size={14} /> Kitchen
+              </Link>
+              <Link to="/user-view" className="flex items-center gap-2 px-5 py-2.5 bg-red-600/10 hover:bg-red-600/20 text-red-600 rounded-xl border border-red-600/20 transition-all text-[10px] font-black uppercase tracking-widest">
+                <LayoutDashboard size={14} /> User View
+              </Link>
+              <Link to="/hub" className="flex items-center gap-2 px-5 py-2.5 bg-red-600/10 hover:bg-red-600/20 text-red-600 rounded-xl border border-red-600/20 transition-all text-[10px] font-black uppercase tracking-widest">
+                <Zap size={14} /> Systems Hub
+              </Link>
+              <Link to="/" className="flex items-center gap-2 px-5 py-2.5 bg-neutral-100 hover:bg-neutral-100 rounded-xl border border-neutral-200 transition-all text-[10px] font-black uppercase tracking-widest text-neutral-500 hover:text-neutral-900">
+                <ExternalLink size={14} className="text-red-600" /> View Live Site
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-center pt-4 border-t border-neutral-200">
+            {/* Tabs container */}
+            <div className="flex bg-neutral-100 p-1 rounded-xl border border-neutral-200 overflow-x-auto no-scrollbar shadow-inner w-full">
+              <button 
+                onClick={() => setActiveTab('payments')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap relative cursor-pointer ${activeTab === 'payments' ? 'bg-red-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}
+              >
+                Governance
+                {pendingPayments.length > 0 && (
+                  <span className="absolute -top-1 right-1.5 w-3.5 h-3.5 bg-white text-red-600 rounded-full flex items-center justify-center text-[7px] font-black animate-bounce border border-red-600">
+                    {pendingPayments.length}
+                  </span>
+                )}
+              </button>
+              <button 
+                onClick={() => setActiveTab('images')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap cursor-pointer ${activeTab === 'images' ? 'bg-red-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}
+              >
+                Assets
+              </button>
+              <button 
+                onClick={() => setActiveTab('menu')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap cursor-pointer ${activeTab === 'menu' ? 'bg-red-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}
+              >
+                Menu
+              </button>
+              <button 
+                onClick={() => setActiveTab('users')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap cursor-pointer ${activeTab === 'users' ? 'bg-red-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}
+              >
+                Users
+              </button>
+              <button 
+                onClick={() => setActiveTab('notes')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap cursor-pointer ${activeTab === 'notes' ? 'bg-red-600 text-white shadow-lg' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}
+              >
+                Records
+              </button>
+            </div>
+
+            {/* Search Input Filter Container */}
+            <div className="flex gap-2 w-full">
+              <div className="relative group flex-grow">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500 group-focus-within:text-red-600 transition-colors" size={12} />
+                <input 
+                  type="text"
+                  placeholder="LOCATE RECORDS OR USERS..."
+                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl pl-10 pr-4 py-2.5 text-[9px] font-black uppercase tracking-[0.2em] focus:border-red-600 focus:bg-white transition-all outline-none placeholder:text-neutral-500"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+              </div>
+              <button 
+                onClick={() => fetchData()}
+                className="flex items-center justify-center px-3.5 py-2.5 bg-red-600/10 hover:bg-red-600 text-red-600 hover:text-white rounded-xl transition-all border border-red-600/20 shadow-lg group cursor-pointer"
+                title="Sync Intelligence"
+              >
+                <Zap size={14} className={loading ? "animate-pulse" : "group-hover:scale-125 transition-transform"} />
+              </button>
+            </div>
+
+            {/* Stats block */}
+            <div className="flex gap-4 w-full md:w-auto">
+              <div className="flex-1 bg-neutral-100 border border-neutral-200 p-3 rounded-2xl text-center">
+                  <div className="text-[8px] font-black uppercase text-neutral-500 mb-0.5 tracking-wider">Users</div>
+                  <div className="text-lg font-black">{users.length}</div>
+              </div>
+              <div className="flex-1 bg-red-600 p-3 rounded-2xl text-center">
+                  <div className="text-[8px] font-black uppercase text-black/60 mb-0.5 tracking-wider">Queue</div>
+                  <div className="text-lg font-black text-black">{pendingPayments.length}</div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {activeTab === 'payments' ? (
+          <main className="grid lg:grid-cols-3 gap-12">
+            <div className="lg:col-span-2 space-y-8">
+               <div className="flex items-center justify-between">
+                 <h2 className="text-3xl font-black italic uppercase flex items-center gap-3">
+                   <CreditCard className="text-red-600" /> Payment <span className="text-red-600">Verification</span>
+                 </h2>
+                 <span className="text-[10px] font-black uppercase text-neutral-500 tracking-widest">{pendingPayments.length} PENDING REQUESTS</span>
+               </div>
+
+               {pendingPayments.length === 0 ? (
+                 <div className="bg-neutral-50 border border-neutral-200 p-12 rounded-[3rem] text-center">
+                    <div className="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <Check className="text-neutral-500" />
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500">All accounts are currently synchronized.</p>
+                 </div>
+               ) : (
+                 <div className="space-y-4">
+                    {pendingPayments.map(payment => (
+                      <motion.div 
+                        layout
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        key={payment.id} 
+                        className="bg-neutral-100 border border-neutral-200 p-6 md:p-8 rounded-[2.5rem] flex flex-col md:flex-row justify-between items-start md:items-center gap-6 group hover:border-yellow-500/30 transition-all"
+                      >
+                         <div className="flex gap-4">
+                            <div className="w-12 h-12 bg-red-600/10 rounded-xl flex items-center justify-center text-red-600 shrink-0">
+                               <CreditCard size={20} />
+                            </div>
+                            <div>
+                               <div className="text-[10px] font-black uppercase text-red-600 mb-1 tracking-widest">{payment.planName} Request</div>
+                               <h3 className="font-black italic uppercase text-lg leading-tight tracking-tighter">{payment.userName}</h3>
+                               <p className="text-[10px] text-neutral-500 font-black uppercase tracking-wider">{payment.userEmail}</p>
+                               {payment.transactionId && (
+                                 <div className="mt-2 text-[9px] font-mono text-neutral-500 bg-neutral-100 px-2 py-1 rounded">
+                                   TXID: {payment.transactionId}
+                                 </div>
+                               )}
+                               {payment.screenshotUrl && (
+                                 <button 
+                                   onClick={() => setViewingScreenshot(payment.screenshotUrl)}
+                                   className="mt-2 inline-flex items-center gap-1 text-[9px] font-black uppercase text-red-600 hover:text-neutral-900 transition-colors"
+                                 >
+                                   <ExternalLink size={10} /> View Screenshot
+                                 </button>
+                               )}
+                            </div>
+                         </div>
+                         
+                         <div className="flex items-center gap-4 w-full md:w-auto">
+                            <div className="text-right flex-grow md:flex-grow-0 hidden md:block">
+                               <div className="text-[10px] font-black uppercase text-neutral-500 tracking-widest">Amount</div>
+                               <div className="text-xl font-black tracking-tighter italic">₹{payment.amount}</div>
+                            </div>
+                            <div className="flex gap-2 w-full md:w-auto">
+                               <button 
+                                 onClick={() => handleApprove(payment)}
+                                 className="flex-1 md:flex-none bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
+                               >
+                                 Approve
+                               </button>
+                               <button 
+                                 onClick={() => handleReject(payment.id)}
+                                 className="flex-1 md:flex-none border-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-all px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest"
+                               >
+                                 Reject
+                               </button>
+                            </div>
+                         </div>
+                      </motion.div>
+                    ))}
+                 </div>
+               )}
+
+               <div className="space-y-6">
+                 <h2 className="text-2xl font-black italic uppercase flex items-center gap-3">
+                   <Users className="text-red-600" /> User <span className="text-red-600">Database</span>
+                 </h2>
+                 <div className="bg-neutral-100 border border-neutral-200 rounded-[3rem] overflow-hidden">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="border-b border-neutral-200">
+                          <th className="p-6 text-[10px] font-black uppercase text-neutral-500 tracking-widest">Identity</th>
+                          <th className="p-6 text-[10px] font-black uppercase text-neutral-500 tracking-widest">Plan Status</th>
+                          <th className="p-6 text-[10px] font-black uppercase text-neutral-500 tracking-widest text-right">Integrity</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {filteredUsers.map(u => (
+                          <tr key={u.uid} className="hover:bg-neutral-100 transition-colors">
+                            <td className="p-6">
+                               <div className="font-black italic uppercase text-sm tracking-tighter">{u.name}</div>
+                               <div className="text-[10px] text-neutral-500 font-black uppercase">{u.email}</div>
+                            </td>
+                            <td className="p-6">
+                               <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md border ${u.planStatus === 'active' ? 'bg-green-600/10 text-green-500 border-green-600/20' : 'bg-red-600/10 text-red-600 border-red-600/20'}`}>
+                                 {u.planStatus === 'active' ? `${u.planId} (${u.daysRemaining}d)` : 'Unmonitored'}
+                               </span>
+                            </td>
+                            <td className="p-6 text-right">
+                               <div className="text-[10px] font-black uppercase text-neutral-500">Prot: {u.proteinGoal}g</div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                 </div>
+               </div>
+            </div>
+
+            <div className="space-y-8">
+               <div className="bg-neutral-100 border border-neutral-200 p-8 rounded-[3rem] relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
+                    <ImageIcon size={100} />
+                  </div>
+                  <h3 className="text-xl font-black italic uppercase mb-6 flex items-center gap-2">
+                    <ImageIcon className="text-red-600" size={20} /> Payment <span className="text-red-600">Barcode</span>
+                  </h3>
+                  
+                  <div className="space-y-6">
+                    <p className="text-[8px] font-black uppercase tracking-[0.2em] text-neutral-500">Select an image from the Assets tab to use as your payment QR code.</p>
+                    
+                    <div className="aspect-square bg-white border border-neutral-200 rounded-2xl flex items-center justify-center overflow-hidden relative group">
+                      {paymentBarcode ? (
+                        <>
+                          <img src={paymentBarcode} alt="Payment Barcode" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                          <div className="absolute inset-0 bg-neutral-100 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-4">
+                            <button 
+                              onClick={() => updateBarcode('')}
+                              className="bg-red-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                            >
+                              Remove Barcode
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center p-8">
+                           <div className="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center mx-auto mb-4">
+                             <Plus className="text-neutral-500" />
+                           </div>
+                           <p className="text-[10px] font-black uppercase tracking-widest text-neutral-500">No Barcode Assigned</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest">Barcode URL</label>
+                       <div className="flex gap-2">
+                         <input 
+                           type="text" 
+                           placeholder="PASTE IMAGE URL HERE..."
+                           className="flex-grow bg-white border border-neutral-200 rounded-xl p-4 text-[10px] font-bold uppercase tracking-widest focus:border-red-600 outline-none"
+                           value={paymentBarcode}
+                           onChange={e => setPaymentBarcode(e.target.value)}
+                         />
+                         <button 
+                           onClick={() => updateBarcode(paymentBarcode)}
+                           className="bg-red-600 hover:bg-neutral-100 hover:text-red-600 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
+                         >
+                           Save
+                         </button>
+                       </div>
+                    </div>
+                  </div>
+               </div>
+
+               <div className="bg-red-600/5 border border-red-600/10 p-8 rounded-[3rem]">
+                  <h3 className="text-sm font-black italic uppercase mb-4 text-red-600">Quick Intelligence</h3>
+                  <div className="space-y-4">
+                     <div className="flex justify-between items-center bg-neutral-100 p-4 rounded-2xl border border-neutral-200">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-neutral-500">Revenue Target</span>
+                        <span className="text-sm font-black italic uppercase tracking-tighter text-red-600 italic">Calculated</span>
+                     </div>
+                     <div className="flex justify-between items-center bg-neutral-100 p-4 rounded-2xl border border-neutral-200">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-neutral-500">Sync Health</span>
+                        <span className="text-sm font-black italic uppercase tracking-tighter text-green-500">Optimal</span>
+                     </div>
+                  </div>
+               </div>
+            </div>
+          </main>
+        ) : activeTab === 'menu' ? (
+          <main className="space-y-12">
+            <section className="bg-neutral-100 p-8 md:p-12 rounded-[3rem] border border-neutral-200 shadow-2xl relative overflow-hidden">
+               <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
+                 <Utensils size={150} />
+               </div>
+               
+               <h2 className="text-3xl font-black italic uppercase mb-10 flex items-center gap-3 relative z-10">
+                 <Utensils className="text-red-600" size={32} /> Product <span className="text-red-600">Listing</span> Panel
+               </h2>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 relative z-10">
+                  <div className="lg:col-span-2 space-y-2">
+                    <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest">Product Title</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. MEXICAN PANEER RICE BOWL"
+                      className="w-full bg-white border border-neutral-200 rounded-2xl p-5 text-xs font-bold uppercase tracking-widest focus:border-red-600 outline-none transition-all"
+                      value={newItem.name || ''}
+                      onChange={e => setNewItem({...newItem, name: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest">Category</label>
+                    <select 
+                      className="w-full bg-white border border-neutral-200 rounded-2xl p-5 text-xs font-bold uppercase tracking-widest focus:border-red-600 outline-none transition-all appearance-none"
+                      value={newItem.category || 'Bowl'}
+                      onChange={e => setNewItem({...newItem, category: e.target.value as any})}
+                    >
+                      <option value="Bowl">Bowl</option>
+                      <option value="Smoothies">Smoothies</option>
+                      <option value="Shake">Shake</option>
+                      <option value="Wrap">Wrap</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest">Price (INR)</label>
+                    <input 
+                      type="number" 
+                      className="w-full bg-white border border-neutral-200 rounded-2xl p-5 text-xs font-bold uppercase tracking-widest focus:border-red-600 outline-none"
+                      value={newItem.price ?? ''}
+                      onChange={e => setNewItem({...newItem, price: Number(e.target.value)})}
+                    />
+                  </div>
+
+                  <div className="lg:col-span-3 space-y-2">
+                    <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest">Product Description & Details</label>
+                    <textarea 
+                      placeholder="ENTER NUTRITION INFO, INGREDIENTS, OR STORY..."
+                      className="w-full bg-white border border-neutral-200 rounded-2xl p-5 text-xs font-semibold uppercase tracking-widest focus:border-red-600 outline-none min-h-[100px] resize-none"
+                      value={newItem.description || ''}
+                      onChange={e => setNewItem({...newItem, description: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="space-y-2 flex flex-col justify-end">
+                    <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest mb-2">Plan Availability</label>
+                    <button 
+                      onClick={() => setNewItem({...newItem, isTrialFixed: !newItem.isTrialFixed})}
+                      className={`w-full py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${newItem.isTrialFixed ? 'bg-red-600 border-red-600 text-white' : 'border-neutral-200 text-neutral-500 hover:text-neutral-900'}`}
+                    >
+                      {newItem.isTrialFixed ? 'Trial Plan Fixed' : 'Pro Plan Only'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest">Protein (g)</label>
+                    <input 
+                      type="number" 
+                      className="w-full bg-white border border-neutral-200 rounded-2xl p-5 text-xs font-bold uppercase tracking-widest focus:border-red-600 outline-none"
+                      value={newItem.protein ?? ''}
+                      onChange={e => setNewItem({...newItem, protein: Number(e.target.value)})}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest">Calories (kcal)</label>
+                    <input 
+                      type="number" 
+                      className="w-full bg-white border border-neutral-200 rounded-2xl p-5 text-xs font-bold uppercase tracking-widest focus:border-red-600 outline-none"
+                      value={newItem.calories ?? ''}
+                      onChange={e => setNewItem({...newItem, calories: Number(e.target.value)})}
+                    />
+                  </div>
+
+                  <div className="lg:col-span-2 space-y-2">
+                    <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest">Background Image (URL)</label>
+                    <input 
+                      type="text" 
+                      placeholder="PASTE URL FROM ASSETS TAB..."
+                      className="w-full bg-white border border-neutral-200 rounded-2xl p-5 text-xs font-bold uppercase tracking-widest focus:border-red-600 outline-none"
+                      value={newItem.bgImage || ''}
+                      onChange={e => setNewItem({...newItem, bgImage: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="lg:col-span-2 space-y-2">
+                    <label className="text-[10px] font-black uppercase text-neutral-500 ml-1 tracking-widest">Spinning Cut-out PNG (URL)</label>
+                    <input 
+                      type="text" 
+                      placeholder="PASTE URL FROM ASSETS TAB..."
+                      className="w-full bg-white border border-neutral-200 rounded-2xl p-5 text-xs font-bold uppercase tracking-widest focus:border-red-600 outline-none"
+                      value={newItem.spinningImage || ''}
+                      onChange={e => setNewItem({...newItem, spinningImage: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="lg:col-span-4 pt-4">
+                    <button 
+                      onClick={handleAddMenuItem}
+                      className="w-full bg-red-600 hover:bg-white hover:text-red-600 border-2 border-red-600 p-6 rounded-2xl font-black italic uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 text-lg"
+                    >
+                      Authenticate & List Product <Plus size={24} />
+                    </button>
+                  </div>
+               </div>
+            </section>
+
+            <section className="space-y-6">
+              <div className="flex items-center justify-between px-4">
+                 <div className="flex items-center gap-6">
+                   <h3 className="text-xl font-black italic uppercase tracking-tighter">Active <span className="text-red-600">Showcase</span></h3>
+                   {menuItems.length > 0 && (
+                     <div className="flex bg-neutral-100 border border-neutral-200 p-1 rounded-xl">
+                       <button 
+                         onClick={() => {
+                           setIsMenuSelectMode(!isMenuSelectMode);
+                           setSelectedMenuItemIds(new Set());
+                         }}
+                         className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isMenuSelectMode ? 'bg-red-600 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}
+                       >
+                         {isMenuSelectMode ? 'Cancel' : 'Multi-Select'}
+                       </button>
+                       {isMenuSelectMode && selectedMenuItemIds.size > 0 && (
+                         <button 
+                           onClick={handleBulkDeleteMenuItems}
+                           className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest bg-red-600 text-white animate-pulse"
+                         >
+                           Delete ({selectedMenuItemIds.size})
+                         </button>
+                       )}
+                     </div>
+                   )}
+                 </div>
+                 <span className="text-[10px] font-black uppercase text-neutral-500">{menuItems.length} ITEMS SYNCED</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                 {menuItems.map(item => (
+                   <motion.div 
+                    layout
+                    key={item.id} 
+                    onClick={() => isMenuSelectMode && toggleMenuItemSelection(item.id)}
+                    className={`bg-neutral-100 border ${item.published ? 'border-yellow-500/30 shadow-[0_0_20px_rgba(220,38,38,0.1)]' : 'border-neutral-200'} p-6 rounded-[2.5rem] flex justify-between items-center group transition-all cursor-pointer ${isMenuSelectMode && selectedMenuItemIds.has(item.id) ? 'ring-2 ring-red-600 border-red-600' : ''}`}
+                   >
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center overflow-hidden border border-neutral-200 relative">
+                           {(item.spinningImage || item.image) ? (
+                             <img src={item.spinningImage || item.image || undefined} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                           ) : (
+                             <Utensils className="text-neutral-500" size={24} />
+                           )}
+                           {!item.published && (
+                             <div className="absolute inset-0 bg-neutral-100 flex items-center justify-center">
+                               <X size={12} className="text-neutral-500" />
+                             </div>
+                           )}
+                           {isMenuSelectMode && (
+                             <div className={`absolute inset-0 flex items-center justify-center bg-neutral-100 transition-opacity ${selectedMenuItemIds.has(item.id) ? 'opacity-100' : 'opacity-0'}`}>
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${selectedMenuItemIds.has(item.id) ? 'bg-red-600 text-white' : 'border-2 border-neutral-200 text-neutral-500'}`}>
+                                   <Check size={16} className={selectedMenuItemIds.has(item.id) ? 'opacity-100' : 'opacity-0'} />
+                                </div>
+                             </div>
+                           )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <div className="text-[10px] font-black uppercase text-red-600 tracking-widest">{item.category}</div>
+                            {!item.published && (
+                              <span className="bg-neutral-100 text-[8px] font-black uppercase tracking-widest text-neutral-500 px-1.5 py-0.5 rounded border border-neutral-200">Draft</span>
+                            )}
+                          </div>
+                          <div className="font-black italic uppercase text-lg leading-tight tracking-tighter">{item.name}</div>
+                          <div className="text-[10px] text-neutral-500 font-black uppercase mt-1">₹{item.price} • {item.protein}g Protein</div>
+                        </div>
+                      </div>
+                      {!isMenuSelectMode && (
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleTogglePublish(item); }}
+                            className={`p-4 rounded-2xl ${item.published ? 'bg-green-600/10 text-green-500 hover:bg-green-600 hover:text-white' : 'bg-red-600/10 text-red-600 hover:bg-red-600 hover:text-white'} transition-all shadow-lg`}
+                            title={item.published ? "Take Offline" : "Go Live"}
+                          >
+                            {item.published ? <Check size={20} /> : <Zap size={20} className="text-yellow-500" />}
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteMenuItem(item.id); }}
+                            className="p-4 rounded-2xl bg-neutral-100 text-neutral-500 hover:bg-red-600 hover:text-white transition-all shadow-lg"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      )}
+                   </motion.div>
+                 ))}
+              </div>
+            </section>
+          </main>
+        ) : activeTab === 'notes' ? (
+          <main className="space-y-12">
+            <section className="bg-neutral-100 p-8 rounded-[3rem] border border-neutral-200">
+                <h2 className="text-2xl font-black italic uppercase mb-8 flex items-center gap-3">
+                  <FileText className="text-red-600" /> Admin Records
+                </h2>
+                <div className="space-y-4">
+                  <div className="text-[10px] font-black uppercase text-neutral-500 ml-1 mb-2">History is preserved. Add any data here.</div>
+                  <textarea 
+                    placeholder="ENTER LOGS, SYSTEM NOTES, OR ANNOUNCEMENTS..."
+                    className="w-full bg-white border border-neutral-200 rounded-3xl p-6 text-sm font-bold uppercase tracking-widest focus:border-red-600 outline-none h-40 resize-none"
+                    value={newNote}
+                    onChange={e => setNewNote(e.target.value)}
+                  />
+                  <button 
+                    onClick={handleAddNote}
+                    className="bg-white text-black hover:bg-neutral-200 px-12 py-5 rounded-2xl font-black italic uppercase tracking-widest transition-all flex items-center gap-3 shadow-xl"
+                  >
+                    Commit to History <History size={20} />
+                  </button>
+                </div>
+            </section>
+
+            <section className="space-y-4">
+               {notes.map(note => (
+                 <div key={note.id} className="bg-neutral-100 border border-neutral-200 p-8 rounded-[2.5rem] relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
+                      <Save size={100} />
+                    </div>
+                    <div className="text-[10px] font-black uppercase text-red-600 mb-4 tracking-[0.2em]">
+                      Entry: {note.createdAt?.toDate().toLocaleString() || 'Just now'}
+                    </div>
+                    <p className="text-lg font-black italic uppercase whitespace-pre-wrap">{note.text}</p>
+                 </div>
+               ))}
+            </section>
+          </main>
+        ) : activeTab === 'users' ? (
+          <main className="space-y-12">
+            <div className="flex items-center justify-between">
+              <h2 className="text-3xl font-black italic uppercase flex items-center gap-3">
+                <Users className="text-red-600" /> Customer <span className="text-red-600">Database</span>
+              </h2>
+              <span className="text-[10px] font-black uppercase text-neutral-500 tracking-widest">{filteredUsers.length} REGISTERED</span>
+            </div>
+            {filteredUsers.length === 0 ? (
+              <div className="bg-neutral-50 border border-neutral-200 p-12 rounded-[3rem] text-center">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500">No users found.</p>
+              </div>
+            ) : (
+              <CustomerTable users={users} searchTerm={searchTerm} />
+            )}
+          </main>
+        ) : (
+          <ImageManagement />
+        )}
+      </div>
+
+      {/* Screenshot Modal */}
+      {viewingScreenshot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-100 backdrop-blur-sm" onClick={() => setViewingScreenshot(null)}>
+          <div className="relative max-w-4xl max-h-[90vh] w-full flex flex-col items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setViewingScreenshot(null)}
+              className="absolute -top-12 right-0 text-neutral-500 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-100 p-2 rounded-full transition-all"
+            >
+              <X size={24} />
+            </button>
+            <img 
+              src={viewingScreenshot} 
+              alt="Payment Screenshot" 
+              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl border border-neutral-200"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
