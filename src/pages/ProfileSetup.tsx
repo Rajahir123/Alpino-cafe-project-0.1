@@ -566,40 +566,40 @@ export default function ProfileSetup() {
                       </div>
                     </div>
 
-                    {/* Food Allergies */}
-                    <div className="space-y-2 p-4 rounded-2xl bg-neutral-50 border border-neutral-200">
-                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 pl-1">
-                        Any Food Allergies or Restrictions? (Optional)
-                      </label>
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {['None', 'Peanuts', 'Lactose', 'Gluten', 'Eggs', 'Soy', 'Seafood'].map(allergen => (
-                          <button
-                            key={allergen}
-                            type="button"
-                            onClick={() => {
-                              if (allergen === 'None') {
-                                updateField('foodAllergies', 'None');
-                              } else {
-                                const curr = formData.foodAllergies && formData.foodAllergies !== 'None' ? formData.foodAllergies : '';
-                                if (!curr.includes(allergen)) {
-                                  updateField('foodAllergies', curr ? `${curr}, ${allergen}` : allergen);
+                      {/* Food Allergies */}
+                      <div className="space-y-2 p-4 rounded-2xl bg-neutral-50 border border-neutral-200">
+                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 pl-1">
+                          Any Food Allergies or Restrictions? (Optional)
+                        </label>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {['None', 'Peanuts', 'Lactose', 'Gluten', 'Soy', 'Seafood'].map(allergen => (
+                            <button
+                              key={allergen}
+                              type="button"
+                              onClick={() => {
+                                if (allergen === 'None') {
+                                  updateField('foodAllergies', 'None');
+                                } else {
+                                  const curr = formData.foodAllergies && formData.foodAllergies !== 'None' ? formData.foodAllergies : '';
+                                  if (!curr.includes(allergen)) {
+                                    updateField('foodAllergies', curr ? `${curr}, ${allergen}` : allergen);
+                                  }
                                 }
-                              }
-                            }}
-                            className="py-1.5 px-3 rounded-lg border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 text-[10px] font-bold uppercase tracking-wider"
-                          >
-                            +{allergen}
-                          </button>
-                        ))}
+                              }}
+                              className="py-1.5 px-3 rounded-lg border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 text-[10px] font-bold uppercase tracking-wider"
+                            >
+                              +{allergen}
+                            </button>
+                          ))}
+                        </div>
+                        <input 
+                          type="text" 
+                          placeholder="E.G. NO DAIRY, NO SEAFOOD (OR NONE)"
+                          value={formData.foodAllergies || ''}
+                          onChange={(e) => updateField('foodAllergies', e.target.value)}
+                          className="w-full bg-white border border-neutral-300 rounded-xl py-3 px-4 font-bold text-xs uppercase tracking-wider text-neutral-900 focus:outline-none focus:border-red-600 focus:ring-2 focus:ring-red-500/20 transition-all placeholder:text-neutral-400"
+                        />
                       </div>
-                      <input 
-                        type="text" 
-                        placeholder="E.G. NO DAIRY, NO SEAFOOD (OR NONE)"
-                        value={formData.foodAllergies || ''}
-                        onChange={(e) => updateField('foodAllergies', e.target.value)}
-                        className="w-full bg-white border border-neutral-300 rounded-xl py-3 px-4 font-bold text-xs uppercase tracking-wider text-neutral-900 focus:outline-none focus:border-red-600 focus:ring-2 focus:ring-red-500/20 transition-all placeholder:text-neutral-400"
-                      />
-                    </div>
                   </div>
                 )}
 

@@ -15,6 +15,7 @@ import ProfileSetup from './pages/ProfileSetup';
 import { LoadingScreen } from './components/LoadingScreen';
 import AdminQuickNav from './components/AdminQuickNav';
 import AdminPasscodeGate from './components/AdminPasscodeGate';
+import KitchenPasscodeGate from './components/KitchenPasscodeGate';
 import { Package2, User as UserIcon, LayoutDashboard, Utensils, ShieldCheck } from 'lucide-react';
 import { doc, getDocFromServer } from 'firebase/firestore';
 import { db } from './lib/firebase';
@@ -93,9 +94,10 @@ function App() {
           />
           
           <Route path="/plans" element={user ? (profile?.role === 'kitchen' ? <Navigate to="/kitchen" /> : <PlanSelection />) : <Navigate to="/login" />} />
+          <Route path="/plan" element={<Navigate to="/plans" replace />} />
           <Route path="/payment" element={user ? (profile?.role === 'kitchen' ? <Navigate to="/kitchen" /> : <PaymentPage />) : <Navigate to="/login" />} />
           <Route path="/setup" element={user ? (profile?.role === 'kitchen' ? <Navigate to="/kitchen" /> : <ProfileSetup />) : <Navigate to="/login" />} />
-          <Route path="/kitchen" element={profile?.role === 'admin' || profile?.role === 'kitchen' ? <KitchenDashboard /> : <Navigate to="/" />} />
+          <Route path="/kitchen" element={<KitchenPasscodeGate><KitchenDashboard /></KitchenPasscodeGate>} />
           <Route path="/admin" element={<AdminPasscodeGate><AdminDashboard /></AdminPasscodeGate>} />
           <Route path="/hub" element={<AdminPasscodeGate><ListingPage /></AdminPasscodeGate>} />
           <Route path="/user-view" element={profile?.role === 'admin' ? <UserDashboard /> : <Navigate to="/" />} />

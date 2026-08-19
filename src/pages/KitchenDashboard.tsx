@@ -3,10 +3,11 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, where, onSnapshot, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { Order } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Link } from 'react-router-dom';
-import { Utensils, Clock, CheckCircle2, Truck, AlertTriangle, Zap } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Utensils, Clock, CheckCircle2, Truck, AlertTriangle, Zap, Lock } from 'lucide-react';
 
 export default function KitchenDashboard() {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -74,7 +75,17 @@ export default function KitchenDashboard() {
             </div>
             <h1 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter">Live <span className="text-red-600">Service</span></h1>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                localStorage.removeItem('alpino_kitchen_authorized');
+                window.location.reload();
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl border border-neutral-200 transition-all text-[10px] font-black uppercase tracking-widest cursor-pointer"
+              title="Lock Kitchen Terminal"
+            >
+              <Lock size={13} /> Lock
+            </button>
             <Link to="/hub" className="flex items-center gap-2 px-4 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-600 rounded-xl border border-red-600/20 transition-all text-[10px] font-black uppercase tracking-widest">
               <Zap size={14} /> Hub
             </Link>
