@@ -114,13 +114,9 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow get: if isOwner(resource.data.userId) || isAdmin() || isKitchen();
-      allow list: if isAdmin() || isKitchen() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow create: if isOwner(incoming().userId) && isValidOrder(incoming());
-      allow update: if (isOwner(existing().userId) || isAdmin() || isKitchen()) && (
-        (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['items', 'createdAt', 'id', 'userName', 'date', 'status', 'userId'])) ||
-        (isKitchen() && incoming().diff(existing()).affectedKeys().hasOnly(['status'])) ||
-        isAdmin()
-      );
+      allow list: if isSignedIn() || isAdmin() || isKitchen();
+      allow create: if (isOwner(incoming().userId) || isAdmin()) && isValidOrder(incoming());
+      allow update: if (isOwner(existing().userId) || isAdmin() || isKitchen());
       allow delete: if isAdmin();
     }
 

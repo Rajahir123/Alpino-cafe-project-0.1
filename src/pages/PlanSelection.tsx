@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { PLANS } from '../constants';
+import { 
+  SHAKE_MENU_5_DAYS,
+  SHAKE_PRO_MENU_20_DAYS,
+  SMOOTHIE_MENU_5_DAYS,
+  SMOOTHIE_PRO_MENU_20_DAYS,
+  BOWL_MENU_5_DAYS,
+  BOWL_PRO_MENU_20_DAYS,
+  COMBO_MENU_5_DAYS,
+  COMBO_PRO_MENU_20_DAYS,
+  BOWL_SMOOTHIE_MENU_5_DAYS,
+  BOWL_SMOOTHIE_PRO_MENU_20_DAYS 
+} from '../constants/planMenus';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, updateDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { useAuth } from '../hooks/useAuth';
@@ -459,19 +471,176 @@ export default function PlanSelection() {
                       </div>
                     </div>
 
-                    {/* Features Checklist */}
+                    {/* Features Checklist / Daily Menu Rotation */}
                     <div className="space-y-2 mb-6 relative z-10 flex-1">
-                      {[
-                        `${plan.duration} Days Scheduled Fresh Delivery`,
-                        'High-Protein Chef Preparation',
-                        'Customize Macros (Veg/Non-Veg/Vegan)',
-                        'Freeze / Pause Days via Portal'
-                      ].map((feat, fIdx) => (
-                        <div key={fIdx} className="flex items-center gap-2 text-xs text-neutral-700 font-medium">
-                          <CheckCircle2 size={14} className="text-red-600 shrink-0" />
-                          <span>{feat}</span>
+                      {plan.id === 'trial_shakes_only' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-red-600 mb-1.5 flex items-center gap-1.5">
+                            <Sparkles size={12} className="text-amber-500 shrink-0" />
+                            <span>5-Day Shake Menu</span>
+                          </div>
+                          {SHAKE_MENU_5_DAYS.map((shakeItem, sIdx) => (
+                            <div key={sIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 mt-1.5" />
+                              <span className="leading-tight">{shakeItem}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : plan.id === 'pro_shakes_only' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-red-600 mb-1.5 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Sparkles size={12} className="text-amber-500 shrink-0" />
+                              <span>20-Day Pro Shake Schedule</span>
+                            </span>
+                            <span className="text-[9px] text-neutral-400 font-bold uppercase">20 Days</span>
+                          </div>
+                          <div className="max-h-56 overflow-y-auto pr-1 space-y-1.5">
+                            {SHAKE_PRO_MENU_20_DAYS.map((shakeItem, sIdx) => (
+                              <div key={sIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 mt-1.5" />
+                                <span className="leading-tight">{shakeItem}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : plan.id === 'trial_smoothies_only' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-amber-600 mb-1.5 flex items-center gap-1.5">
+                            <Sparkles size={12} className="text-red-500 shrink-0" />
+                            <span>5-Day Smoothie Menu</span>
+                          </div>
+                          {SMOOTHIE_MENU_5_DAYS.map((smoothieItem, smIdx) => (
+                            <div key={smIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                              <span className="leading-tight">{smoothieItem}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : plan.id === 'pro_smoothies_only' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-amber-600 mb-1.5 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Sparkles size={12} className="text-red-500 shrink-0" />
+                              <span>20-Day Pro Smoothie Schedule</span>
+                            </span>
+                            <span className="text-[9px] text-neutral-400 font-bold uppercase">20 Days</span>
+                          </div>
+                          <div className="max-h-56 overflow-y-auto pr-1 space-y-1.5">
+                            {SMOOTHIE_PRO_MENU_20_DAYS.map((smoothieItem, smIdx) => (
+                              <div key={smIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                                <span className="leading-tight">{smoothieItem}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : plan.id === 'trial_food' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-red-600 mb-1.5 flex items-center gap-1.5">
+                            <Sparkles size={12} className="text-amber-500 shrink-0" />
+                            <span>5-Day Bowl Menu</span>
+                          </div>
+                          {BOWL_MENU_5_DAYS.map((bowlItem, bIdx) => (
+                            <div key={bIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 mt-1.5" />
+                              <span className="leading-tight">{bowlItem}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : plan.id === 'pro_food' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-red-600 mb-1.5 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Sparkles size={12} className="text-amber-500 shrink-0" />
+                              <span>20-Day Pro Bowl Schedule</span>
+                            </span>
+                            <span className="text-[9px] text-neutral-400 font-bold uppercase">20 Days</span>
+                          </div>
+                          <div className="max-h-56 overflow-y-auto pr-1 space-y-1.5">
+                            {BOWL_PRO_MENU_20_DAYS.map((bowlItem, bIdx) => (
+                              <div key={bIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 mt-1.5" />
+                                <span className="leading-tight">{bowlItem}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : plan.id === 'trial_shakes' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-red-600 mb-1.5 flex items-center gap-1.5">
+                            <Sparkles size={12} className="text-amber-500 shrink-0" />
+                            <span>5-Day Bowl + Shake Combo Menu</span>
+                          </div>
+                          {COMBO_MENU_5_DAYS.map((comboItem, cIdx) => (
+                            <div key={cIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 mt-1.5" />
+                              <span className="leading-tight">{comboItem}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : plan.id === 'pro_shakes' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-red-600 mb-1.5 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Sparkles size={12} className="text-amber-500 shrink-0" />
+                              <span>20-Day Pro Bowl + Shake Schedule</span>
+                            </span>
+                            <span className="text-[9px] text-neutral-400 font-bold uppercase">20 Days</span>
+                          </div>
+                          <div className="max-h-56 overflow-y-auto pr-1 space-y-1.5">
+                            {COMBO_PRO_MENU_20_DAYS.map((comboItem, cIdx) => (
+                              <div key={cIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 mt-1.5" />
+                                <span className="leading-tight">{comboItem}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : plan.id === 'trial_smoothies' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-amber-600 mb-1.5 flex items-center gap-1.5">
+                            <Sparkles size={12} className="text-red-500 shrink-0" />
+                            <span>5-Day Bowl + Smoothie Combo Menu</span>
+                          </div>
+                          {BOWL_SMOOTHIE_MENU_5_DAYS.map((bsItem, bsIdx) => (
+                            <div key={bsIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                              <span className="leading-tight">{bsItem}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : plan.id === 'pro_smoothies' ? (
+                        <div className="space-y-1.5 bg-neutral-50/90 p-3 rounded-2xl border border-neutral-200/90 shadow-sm">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-amber-600 mb-1.5 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Sparkles size={12} className="text-red-500 shrink-0" />
+                              <span>20-Day Pro Bowl + Smoothie Schedule</span>
+                            </span>
+                            <span className="text-[9px] text-neutral-400 font-bold uppercase">20 Days</span>
+                          </div>
+                          <div className="max-h-56 overflow-y-auto pr-1 space-y-1.5">
+                            {BOWL_SMOOTHIE_PRO_MENU_20_DAYS.map((bsItem, bsIdx) => (
+                              <div key={bsIdx} className="flex items-start gap-2 text-xs text-neutral-800 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                                <span className="leading-tight">{bsItem}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        [
+                          `${plan.duration} Days Scheduled Fresh Delivery`,
+                          'High-Protein Chef Preparation',
+                          'Customize Macros (Veg/Non-Veg/Vegan)',
+                          'Freeze / Pause Days via Portal'
+                        ].map((feat, fIdx) => (
+                          <div key={fIdx} className="flex items-center gap-2 text-xs text-neutral-700 font-medium">
+                            <CheckCircle2 size={14} className="text-red-600 shrink-0" />
+                            <span>{feat}</span>
+                          </div>
+                        ))
+                      )}
                     </div>
 
                     {/* Price & Action Section */}

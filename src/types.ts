@@ -64,10 +64,21 @@ export interface Order {
   id: string;
   userId: string;
   userName: string;
+  userEmail?: string;
+  userPhone?: string;
+  userAddress?: string;
+  preferredTimeSlot?: string;
+  planId?: string;
+  planName?: string;
+  planType?: 'trial' | 'pro';
+  dayNumber?: number; // Day 1 to 5 or Day 1 to 20
+  totalDays?: number; // 5 or 20
+  menuText?: string; // Full day text (e.g. Day 1 — Muscle Mania Makhni Rice Bowl + Shake)
   date: string; // YYYY-MM-DD
   items: MenuItem[];
   status: OrderStatus;
   createdAt: any;
+  updatedAt?: any;
 }
 
 export interface PaymentRecord {

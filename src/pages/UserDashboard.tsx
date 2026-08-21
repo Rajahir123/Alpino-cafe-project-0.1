@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { MenuItem, Order } from '../types';
 import AssetImage from '../components/AssetImage';
+import { PLAN_MENUS, parseMenuDayString } from '../constants/planMenus';
+import { syncUserSubscriptionOrders } from '../lib/orderSync';
 
 export default function UserDashboard() {
   const { profile } = useAuth();
@@ -386,6 +388,50 @@ export default function UserDashboard() {
             </button>
           </div>
         </section>
+
+        {/* Day-by-Day Plan Schedule */}
+        {profile?.planId && PLAN_MENUS[profile.planId] && (
+          <section className="bg-neutral-100 border border-neutral-200 rounded-[2rem] p-6 sm:p-8 space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-neutral-200 pb-4">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-red-600">Active Subscription Schedule</div>
+                <h2 className="text-xl sm:text-2xl font-black italic uppercase text-neutral-900 mt-0.5">
+                  {plan?.name || 'Your Routine Menu'}
+                </h2>
+              </div>
+              <span className="px-3 py-1 bg-red-600/10 text-red-600 border border-red-600/20 rounded-full text-xs font-black uppercase tracking-wider">
+                {plan?.type === 'trial' ? '5-Day Trial Lineup' : '20-Day Pro Lineup'}
+              </span>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-1">
+              {PLAN_MENUS[profile.planId].map((menuItemStr, idx) => {
+                const daySchedule = parseMenuDayString(menuItemStr, idx);
+                return (
+                  <div 
+                    key={idx}
+                    className="p-3.5 bg-white border border-neutral-200 rounded-xl flex items-start gap-3 shadow-sm hover:border-red-600/30 transition-all"
+                  >
+                    <div className="w-9 h-9 rounded-lg bg-red-600/10 border border-red-600/20 text-red-600 flex flex-col items-center justify-center shrink-0 font-black">
+                      <span className="text-[8px] uppercase leading-none">Day</span>
+                      <span className="text-xs leading-none mt-0.5">{daySchedule.dayNumber}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-neutral-900 leading-snug">{daySchedule.rawMealName}</div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {daySchedule.items.map((it, i) => (
+                          <span key={i} className="text-[9px] font-bold text-neutral-500 bg-neutral-100 px-1.5 py-0.5 rounded">
+                            {it.category} ({it.protein}g)
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Recent Orders */}
         <section>

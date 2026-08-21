@@ -13,6 +13,7 @@ import { usePersistedState } from '../hooks/usePersistedState';
 import { useAuth } from '../hooks/useAuth';
 import { signInWithPopup } from 'firebase/auth';
 import { auth as firebaseAuth, googleProvider } from '../lib/firebase';
+import { syncUserSubscriptionOrders, syncAllActiveSubscribers } from '../lib/orderSync';
 
 export default function AdminDashboard() {
   const { profile, user } = useAuth();
@@ -133,6 +134,33 @@ export default function AdminDashboard() {
       });
 
       await batch.commit();
+
+      // Automatically generate day-by-day kitchen orders for subscriber
+      const targetUser = users.find(u => u.uid === payment.userId) || {
+        uid: payment.userId,
+        name: payment.userName,
+        email: payment.userEmail,
+        planId: payment.planId,
+        planStatus: 'active',
+        daysRemaining: plan.duration || 20,
+        role: 'user',
+        proteinGoal: 100,
+        avgProtein: 0,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      } as UserProfile;
+
+      const userForSync: UserProfile = {
+        ...targetUser,
+        planId: payment.planId,
+        planStatus: 'active'
+      };
+
+      try {
+        await syncUserSubscriptionOrders(userForSync);
+      } catch (syncErr) {
+        console.error("Order sync error after payment approval:", syncErr);
+      }
 
       // Immediately reflect in local state
       setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, status: 'approved', verifiedBy: user?.email || 'admin' } : p));
